@@ -1,0 +1,38 @@
+# ESP32 Discovery Snippet (Arduino/C++)
+# Add this to your ESP32 sketch to allow the AntennaSwitch app to find it automatically.
+
+#include <WiFiUdp.h>
+
+WiFiUDP udp;
+const int discoveryPort = 5000;
+
+void setup_discovery() {
+  udp.begin(discoveryPort);
+}
+
+void handle_discovery() {
+  int packetSize = udp.parsePacket();
+  if (packetSize) {
+    char packetBuffer[255];
+    int len = udp.read(packetBuffer, 255);
+    if (len > 0) packetBuffer[len] = 0;
+    
+    // Listen for the specific discovery trigger
+    if (String(packetBuffer) == "COAX_DISCOVERY") {
+      udp.beginPacket(udp.remoteIP(), udp.remotePort());
+      
+      // Response Format: COAX_DEVICE:DeviceName:IPAddress
+      // You can change 'AntennaSwitch' to a unique name if you have multiple devices.
+      String response = "COAX_DEVICE:AntennaSwitch:" + WiFi.localIP().toString();
+      
+      udp.print(response);
+      udp.endPacket();
+    }
+  }
+}
+
+// In your main loop(), call handle_discovery():
+// void loop() {
+//   handle_discovery();
+//   ... other code ...
+// }
