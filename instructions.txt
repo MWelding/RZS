@@ -1,0 +1,15 @@
+Antenna Mini - User Instructions
+
+Setup & Configuration:
+1. Open Antenna Mini from your Desktop.
+2. The UI provides quick switching for your N1MM radio and ESP network relays.
+3. Click the ⚙ (Gear) icon to open Settings, then click "EDIT XML CONFIG".
+4. Notepad will open. Edit your IP address, ESP identifiers, and custom frequencies.
+5. Save the file and close Notepad. The application will instantly auto-reboot to apply your changes!
+
+Using N1MM Auto-Switch:
+- Check the "N1MM" box to listen to N1MM Logger+ frequency broadcasts.
+- If N1MM goes offline or is closed, the app will safely revert to Manual Control after 20 seconds of silence to ensure you never lose a connection during a dropout.
+- You can manually override at any time by unchecking the box.
+
+Enjoy! (c) YL3RZ 2026

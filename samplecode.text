@@ -1,0 +1,244 @@
+#include <WiFi.h>
+#include <ESPAsyncWebServer.h>
+#include <AsyncTCP.h>
+#include <WebSocketsClient.h>
+#include <time.h>
+#include <ESPmDNS.h>
+
+// ================= CONFIG =================
+const char* ssid = "MTD1";
+const char* password = "4IDLDLBEVW";
+
+const char* ptt_host = "192.168.1.50";
+const uint16_t ptt_port = 81;
+
+// XIAO ESP32-C3 Pins mapped for ULN2006A inputs.
+// Xiao pins: D0=2, D1=3, D2=4, D3=5, D4=6, D5=7, D6=21, D7=20, D8=8, D9=9, D10=10
+const int relayPins[] = { 2, 3, 4, 5, 6 }; 
+const int NUM_RELAYS = sizeof(relayPins) / sizeof(relayPins[0]);
+
+const unsigned long PTT_TIMEOUT = 120000;
+
+// ================= GLOBAL STATE =================
+AsyncWebServer server(80);
+WebSocketsClient webSocket;
+
+volatile bool pttActive = false;
+volatile bool pttEverSeen = false;
+volatile unsigned long lastPTTUpdate = 0;
+
+bool relayState[10] = {false}; // Tracks software state of relays
+
+// ================= UTIL =================
+time_t getTimestamp() {
+  return time(nullptr);
+}
+
+// ================= RELAY CONTROL =================
+void setRelayHardware(int index, bool state) {
+  if (index < 0 || index >= NUM_RELAYS) return;
+  
+  if (relayState[index] != state) {
+    // ULN2006A requires HIGH to activate the Darlington pair (sink current)
+    digitalWrite(relayPins[index], state ? HIGH : LOW);
+    relayState[index] = state;
+  }
+}
+
+bool isRelayActive(int index) {
+  if (index < 0 || index >= NUM_RELAYS) return false;
+  return digitalRead(relayPins[index]) == HIGH;
+}
+
+// ================= PTT SAFETY =================
+bool isPTTSafe() {
+  if (!pttEverSeen) return true;
+  if (millis() - lastPTTUpdate > PTT_TIMEOUT) return false;
+  if (pttActive) return false;
+  return true;
+}
+
+// ================= WEBSOCKET =================
+void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
+  switch(type) {
+    case WStype_CONNECTED:
+      Serial.println("Connected to PTT WS");
+      break;
+    case WStype_DISCONNECTED:
+      Serial.println("PTT WS Disconnected");
+      break;
+    case WStype_TEXT: {
+      String msg = String((char*)payload);
+      if (msg.indexOf("\"ptt\":true") >= 0) {
+        pttActive = true;
+        lastPTTUpdate = millis();
+        pttEverSeen = true;
+      } else if (msg.indexOf("\"ptt\":false") >= 0) {
+        pttActive = false;
+        lastPTTUpdate = millis();
+        pttEverSeen = true;
+      }
+      break;
+    }
+    default:
+      break;
+  }
+}
+
+void setupWebSocket() {
+  webSocket.begin(ptt_host, ptt_port, "/");
+  webSocket.onEvent(webSocketEvent);
+  webSocket.setReconnectInterval(5000);
+}
+
+void webSocketTask(void* parameter) {
+  while (true) {
+    webSocket.loop();
+    vTaskDelay(pdMS_TO_TICKS(10));
+  }
+}
+
+// ================= API HANDLERS =================
+AsyncWebServerResponse* createCorsResponse(int code, const String &content, const char* type="application/json") {
+  AsyncWebServerResponse *response = new AsyncWebServerResponse(code, type, content);
+  response->addHeader("Access-Control-Allow-Origin", "*");
+  response->addHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  response->addHeader("Access-Control-Allow-Headers", "*");
+  return response;
+}
+
+void handleStatus(AsyncWebServerRequest *request) {
+  String res = "{";
+  res += "\"timestamp\":" + String(getTimestamp()) + ",";
+  res += "\"PTT\":" + String(pttActive ? "true" : "false") + ",";
+  res += "\"PTT_seen\":" + String(pttEverSeen ? "true" : "false") + ",";
+  res += "\"PTT_safe\":" + String(isPTTSafe() ? "true" : "false") + ",";
+  
+  res += "\"relays\":[";
+  for (int i = 0; i < NUM_RELAYS; i++) {
+    res += String(relayState[i] ? "true" : "false");
+    if (i < NUM_RELAYS - 1) res += ",";
+  }
+  res += "]}";
+  
+  request->send(createCorsResponse(200, res));
+}
+
+void handleSet(AsyncWebServerRequest *request) {
+  if (!request->hasParam("plain", true)) {
+    request->send(createCorsResponse(400, "{\"success\":false,\"reason\":\"no_body\"}"));
+    return;
+  }
+
+  String body = request->getParam("plain", true)->value();
+  body.trim();
+
+  bool success = true;
+  String reason = "";
+
+  int relayIndex = -1;
+  bool desiredState = false;
+  bool stateProvided = false;
+
+  // Crude JSON parsing to avoid heavy libraries
+  int rIndex = body.indexOf("\"relay\":");
+  if (rIndex >= 0) {
+    int start = rIndex + 8;
+    int end = body.indexOf(",", start);
+    if (end < 0) end = body.indexOf("}", start);
+    if (end >= 0) relayIndex = body.substring(start, end).toInt();
+  }
+
+  int sIndex = body.indexOf("\"state\":");
+  if (sIndex >= 0) {
+    int start = sIndex + 8;
+    if (body.indexOf("true", start) == start) { 
+        desiredState = true; 
+        stateProvided = true; 
+    }
+    else if (body.indexOf("false", start) == start) { 
+        desiredState = false; 
+        stateProvided = true; 
+    }
+  }
+
+  if (!isPTTSafe()) {
+    success = false;
+    reason = "ptt_not_safe";
+  } else if (relayIndex < 0 || relayIndex >= NUM_RELAYS) {
+    success = false;
+    reason = "invalid_relay";
+  } else if (!stateProvided) {
+    success = false;
+    reason = "missing_state";
+  }
+
+  if (success) {
+    setRelayHardware(relayIndex, desiredState);
+  }
+
+  // Verify the hardware actually flipped
+  bool verified = success ? (isRelayActive(relayIndex) == desiredState) : false;
+
+  String res = "{";
+  res += "\"success\":" + String(success ? "true" : "false") + ",";
+  res += "\"verified\":" + String(verified ? "true" : "false") + ",";
+  res += "\"PTT_safe\":" + String(isPTTSafe() ? "true" : "false");
+  if (!success) res += ",\"reason\":\"" + reason + "\"";
+  res += "}";
+
+  request->send(createCorsResponse(200, res));
+}
+
+// ================= WIFI & SETUP =================
+void connectWiFi() {
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid, password);
+  Serial.print("Connecting to WiFi");
+
+  unsigned long startAttemptTime = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - startAttemptTime < 15000) {
+    delay(500);
+    Serial.print(".");
+  }
+
+  if (WiFi.status() != WL_CONNECTED) {
+    ESP.restart();
+  }
+
+  WiFi.setSleep(false);
+  Serial.println("\nConnected! IP: " + WiFi.localIP().toString());
+}
+
+void setup() {
+  Serial.begin(115200);
+
+  // Initialize all relay pins to LOW (off) on boot
+  for (int i = 0; i < NUM_RELAYS; i++) {
+    pinMode(relayPins[i], OUTPUT);
+    digitalWrite(relayPins[i], LOW);
+  }
+
+  connectWiFi();
+
+  if (MDNS.begin("esp32-c3")) {
+    MDNS.addService("http", "tcp", 80);
+  }
+
+  configTime(0, 0, "pool.ntp.org");
+  setupWebSocket();
+  xTaskCreate(webSocketTask, "WS", 4096, NULL, 1, NULL);
+
+  // --- API endpoints ---
+  server.on("/status", HTTP_GET, handleStatus);
+  server.on("/set", HTTP_POST, handleSet);
+
+  // OPTIONS preflight for CORS
+  server.on("/set", HTTP_OPTIONS, [](AsyncWebServerRequest *request){
+    request->send(createCorsResponse(204, ""));
+  });
+
+  server.begin();
+}
+
+void loop() {}

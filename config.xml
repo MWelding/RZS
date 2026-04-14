@@ -1,0 +1,62 @@
+<config>
+  <always_on_top>false</always_on_top>
+  <width>182</width>
+  <height>429</height>
+  <pos_x>1736</pos_x>
+  <pos_y>770</pos_y>
+  <scale>0.76</scale>
+  <esp_devices>
+    <esp name="AntSwitch" ip="192.168.88.45" type="ant_switch" />
+    <esp name="PTT_Reader" ip="192.168.88.30" type="ptt_reader" />
+  </esp_devices>
+  <n1mm port="12060" auto_switch="false" />
+  <button name="80m" role="tx_rx" band="80m" freq_low="3500" freq_high="4000">
+    <relay esp="AntSwitch" index="0" state="true" />
+    <relay esp="AntSwitch" index="1" state="true" />
+    <relay esp="AntSwitch" index="2" state="false" />
+    <relay esp="AntSwitch" index="3" state="false" />
+    <relay esp="AntSwitch" index="4" state="false" />
+  </button>
+  <button name="Bev NE" role="rx_only" band="80m" freq_low="3500" freq_high="4000">
+    <relay esp="AntSwitch" index="0" state="false" />
+    <relay esp="AntSwitch" index="1" state="false" />
+    <relay esp="AntSwitch" index="2" state="true" />
+    <relay esp="AntSwitch" index="3" state="false" />
+    <relay esp="AntSwitch" index="4" state="false" />
+  </button>
+  <button name="160m" role="tx_rx" band="160m" freq_low="1800" freq_high="2000">
+    <relay esp="AntSwitch" index="0" state="true" />
+    <relay esp="AntSwitch" index="1" state="true" />
+    <relay esp="AntSwitch" index="2" state="false" />
+    <relay esp="AntSwitch" index="3" state="false" />
+    <relay esp="AntSwitch" index="4" state="false" />
+  </button>
+  <button name="40m" role="tx_rx" band="40m" freq_low="7000" freq_high="7300">
+    <relay esp="AntSwitch" index="0" state="false" />
+    <relay esp="AntSwitch" index="1" state="true" />
+    <relay esp="AntSwitch" index="2" state="false" />
+    <relay esp="AntSwitch" index="3" state="false" />
+    <relay esp="AntSwitch" index="4" state="false" />
+  </button>
+  <button name="Tribander" role="tx_rx" band="20m" freq_low="14000" freq_high="14350">
+    <relay esp="AntSwitch" index="0" state="false" />
+    <relay esp="AntSwitch" index="1" state="false" />
+    <relay esp="AntSwitch" index="2" state="false" />
+    <relay esp="AntSwitch" index="3" state="true" />
+    <relay esp="AntSwitch" index="4" state="false" />
+  </button>
+  <button name="Vertical" role="tx_rx" band="15m" freq_low="21000" freq_high="21450">
+    <relay esp="AntSwitch" index="0" state="false" />
+    <relay esp="AntSwitch" index="1" state="false" />
+    <relay esp="AntSwitch" index="2" state="false" />
+    <relay esp="AntSwitch" index="3" state="false" />
+    <relay esp="AntSwitch" index="4" state="true" />
+  </button>
+  <button name="Off" role="tx_rx" band="" freq_low="0" freq_high="0">
+    <relay esp="AntSwitch" index="0" state="false" />
+    <relay esp="AntSwitch" index="1" state="false" />
+    <relay esp="AntSwitch" index="2" state="false" />
+    <relay esp="AntSwitch" index="3" state="false" />
+    <relay esp="AntSwitch" index="4" state="false" />
+  </button>
+</config>
